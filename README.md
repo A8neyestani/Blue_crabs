@@ -1,16 +1,16 @@
 # Blue crab segmentation and dimension estimation
 
-I built this project to connect blue crab recognition with size estimation: locate the animal, identify its class, trace its boundary, and use depth and camera calibration to express its visible extent in millimeters.
+I wanted to see whether a camera could help with two parts of studying blue crabs: identifying what is in the image and estimating how big it is. This project uses YOLO11m-seg to find crabs and egg clusters, then combines the masks with depth and camera calibration to estimate dimensions in millimeters.
 
-The original experiment was completed in July 2025. This repository makes the model easier to run and inspect, with recovered training settings and a fresh evaluation of the archived test split.
+I completed the original experiment in July 2025. The repository includes the dataset, inference code, training settings and examples from that work, along with a later check of the saved model on the test split.
 
 **Author:** [Arman Neyestani](https://github.com/A8neyestani) · **Stack:** Python, Ultralytics, PyTorch, OpenCV, NumPy
 
 ## Motivation
 
-The motivation was to support marine monitoring and aquaculture research with a repeatable way to record both the type of crab and its size. Manual image annotation and caliper measurements require time and direct intervention. My aim was to explore how much of that workflow could be handled from imagery, with eventual use in an underwater observation or robotic system.
+The starting point was a practical task in marine monitoring and aquaculture: recording the type and size of an animal. Doing that by hand means reviewing images, marking boundaries or taking physical measurements. I wanted to explore a camera-based workflow that could eventually be used in an underwater observation or robotic system.
 
-Recognizing a crab is only part of that task: a mask gives its outline in pixels, but its apparent size changes with distance from the camera. The central contribution of this project is the integration of four-class instance segmentation with depth-based geometry and PCA-based dimension estimation. Segmentation selects the relevant pixels; aligned metric depth and camera intrinsics supply scale; PCA finds the main directions of the visible shape. This connects an image-recognition result to a potential biological measurement workflow.
+A segmentation mask gives a useful outline, but it still measures the crab in pixels. The same animal looks smaller as it moves away from the camera. That is why I added depth-based measurement: use the mask to select the animal, recover metric coordinates from depth, and use PCA to estimate its extent along its main axes. Combining these steps is the main contribution of the project.
 
 ## Demo
 
@@ -18,27 +18,27 @@ Recognizing a crab is only part of that task: a mask gives its outline in pixels
 
 **[Watch the full 24-second demo](assets/demo.mp4)** · [Download the MP4](assets/demo.mp4?raw=true)
 
-The animation is an excerpt from the original video demonstration. The MP4 contains the full sequence, including difficult frames where the crab is obscured. It is a qualitative example, not a runtime benchmark. The preview plays directly in this README; click it to open the video.
+Click the preview to watch the original demonstration. The full clip also shows frames where the crab becomes obscured and detections are lost. It illustrates the model's behavior; it was not recorded as a speed benchmark.
 
 | Example input | Current pipeline output |
 | --- | --- |
 | ![Original example image](assets/example.jpg) | ![Female blue crab segmentation with confidence and instance ID](assets/segmentation.jpg) |
 
-This still is an existing project example, not an independently collected test. The mask includes the visible body and appendages; the confidence score describes a detection, not measurement accuracy.
+This is one of the original project images. The mask follows the visible body and appendages. The score above it is the detection confidence.
 
 ## What I worked on
 
-The project covers a four-class polygon-annotated dataset, fine-tuning a pretrained segmentation model, checking detection and mask quality, and converting mask pixels into metric coordinates when depth and camera calibration are available. I used YOLO11m-seg as the starting point so the work could focus on the crab dataset and the downstream geometry.
+I fine-tuned a COCO-pretrained YOLO11m-seg model on a four-class dataset and used the predicted masks as the input to the measurement code. Starting with pretrained weights let me focus on the crab images, the quality of the masks and the geometry needed to turn them into useful measurements.
 
-The code keeps each detected animal as a separate instance. It saves masks, an overlay and a JSON record without requiring a desktop display. Optional dimension estimates are attached to each instance rather than merging every crab of the same class.
+The current code saves a mask for each detected animal, an overlay image and a JSON file with the predictions. It runs without opening a display window. When depth is supplied, each instance gets its own dimension estimate.
 
 ## Experimental dimension estimation
 
-This is the part of the project that connects recognition to measurement. The original design combines an RGB frame, its aligned depth map and a calibrated camera model, then estimates dimensions from the segmented region.
+The measurement step needs three things: an RGB image, a depth map aligned to it, and the camera's intrinsic matrix. The figure below shows how these inputs fit together in the original prototype.
 
 ![Original workflow figure: RGB image and depth illustration above the segmented crab and dimension output](assets/measurement-workflow.png)
 
-*Figure 3, extracted from page 8 of the original July 2025 project report. It illustrates the RGB, depth and output stages. In the implementation, YOLO takes the RGB image; depth is used afterward for geometry, not as a second input to YOLO.*
+*Figure 3 from the original project report. YOLO processes the RGB image; the depth map is used afterward to calculate metric coordinates.*
 
 ### From a mask to millimeters
 
@@ -66,7 +66,7 @@ The last line is evaluated separately for each PCA axis. The current outputs are
 
 ![Original prototype screenshot showing a female crab mask and displayed dimensions of approximately 207.8 mm and 73.5 mm](assets/measurement-example.jpg)
 
-*The original prototype displays approximately 207.8 mm and 73.5 mm. This screenshot is retained as a record of the measurement demonstration, not as a verified physical measurement or output reproduced by the revised pipeline. Its legacy Width/Length labels are replaced by explicit PCA-axis names in the current code. The archived 8-bit depth preview and undocumented calibration are insufficient to validate those values.*
+*The original prototype displayed about 207.8 mm and 73.5 mm. These are demonstration values, not verified physical measurements: the saved 8-bit depth preview and calibration information are insufficient to validate them. The current code uses PCA-axis names in place of the old Width/Length labels.*
 
 ### Run with calibrated depth
 
@@ -78,7 +78,7 @@ python crab.py predict --image your_rgb.jpg --depth your_depth.png --depth-scale
 
 `--depth-scale` is meters per stored unit: use `0.001` for millimeter-valued depth or `1` for a `.npy` depth array already in meters. The loader accepts single-channel depth images or numeric `.npy` arrays and rejects 8-bit depth previews. Zero, negative and non-finite depths are excluded; fewer than ten valid mask pixels yields `null` dimensions rather than a misleading zero measurement.
 
-**Measurement accuracy is unvalidated.** There is no calibrated reference-measurement study in this repository. Underwater use would additionally need a suitable imaging setup and calibration for the optical conditions. The runnable example and video demonstrate segmentation; the historical measurement screenshot above documents the original prototype.
+I have not established the physical accuracy of this measurement method. That needs a comparison with reference measurements using calibrated depth. Underwater testing would also need calibration for the actual imaging setup and optical conditions.
 
 ## Results
 
@@ -102,11 +102,11 @@ The validation values come from metadata stored in `best.pt`. The test values we
 | Eggs | 4 | 99.5 | 96.2 |
 | Other crabs | 7 | 55.1 | 44.1 |
 
-There are only 31 annotated instances in this test split, including four egg instances. These scores are useful for inspecting the archived experiment, but do not establish performance on a new deployment site. In particular, the high egg score rests on very few examples. Other crabs remain the weakest test class, and the gap between male-crab mAP@50 and mAP@50–95 shows that finding an animal and tracing its boundary accurately are different challenges.
+The small test set matters when reading these numbers. There are just four egg instances, so I would not draw a broad conclusion from that class's high score. Other crabs are the weakest class. For male crabs, the gap between mAP@50 and mAP@50–95 also shows that locating an animal is easier than getting its boundary consistently right. A larger test set from a new source would give a better picture of generalization.
 
 ![Original training history: segmentation loss and mask average precision across 300 epochs](assets/training.png)
 
-The curves above are reconstructed from the training history embedded in the checkpoint. No new 300-epoch training run was performed for this release.
+These curves come from the original 300-epoch training history stored in the checkpoint. The later evaluation used the saved weights without retraining.
 
 ## Run it locally
 
@@ -142,7 +142,9 @@ Use `--confidence 0.50` to change the detection threshold, `--iou` to change sup
 
 ## Dataset and training
 
-The archived Roboflow export contains **631 images** with four classes:
+**[Download Dataset.zip](Dataset.zip?raw=true)** (about 45 MB), or use the copy included when you clone this repository. It is the original Roboflow export used for the results above, with images, polygon labels and `data.yaml`.
+
+The dataset contains **631 images** across four classes:
 
 | Split | Images | Polygon instances |
 | --- | ---: | ---: |
@@ -152,11 +154,17 @@ The archived Roboflow export contains **631 images** with four classes:
 
 Class IDs are `0: Blue_crab_Female`, `1: Blue_crab_Male`, `2: Eggs`, and `3: Other_crabs`. These are object/region labels: an egg cluster can be annotated separately from the animal carrying it.
 
-The dataset export identifies [Roboflow blue-crab, version 1](https://universe.roboflow.com/neyestanisetelco/blue-crab/dataset/1) as its source. Access and export may require a Roboflow account. Images include web-sourced material with varied viewpoints, backgrounds and image quality; they should not be described as a uniform collection of calibrated underwater captures. The image count includes augmented training examples, not 631 independent observations.
+The export came from [Roboflow blue-crab, version 1](https://universe.roboflow.com/neyestanisetelco/blue-crab/dataset/1). You do not need a Roboflow account to use the ZIP included here. The collection includes web-sourced images with different viewpoints, backgrounds and image quality, as well as augmented training examples. The 631 images are therefore not 631 independent captures or a uniform set of underwater observations.
 
-The archived split was checked for byte-identical images across splits and shared Roboflow source-name stems; neither check found overlap. Visually similar images and alternative encodings were not exhaustively audited, so this is not a guarantee against data leakage. Polygon coordinates were checked for valid normalized ranges and image/label counts agree in every split.
+Checks found no byte-identical images or shared Roboflow source-name stems across splits. That does not rule out visually similar images or copies saved in another format. The polygon coordinates are within the expected normalized range, and every split has matching image and label counts.
 
-Download a YOLO segmentation export and extract it under `data/`. In its `data.yaml`, set `path` to the absolute extracted directory and use:
+From the repository root, extract the dataset with:
+
+```bash
+python -m zipfile -e Dataset.zip data
+```
+
+In the extracted `data/data.yaml`, add `path` with the absolute path to your `data` directory. Replace the three split paths with the values below and keep the class definitions:
 
 ```yaml
 train: train/images
@@ -166,7 +174,7 @@ nc: 4
 names: [Blue_crab_Female, Blue_crab_Male, Eggs, Other_crabs]
 ```
 
-Retain the archived split when comparing with these results. An updated export or different preprocessing can change the scores.
+Keep these splits unchanged when comparing your run with the reported results.
 
 ```bash
 python crab.py evaluate --data data/data.yaml --weights weights/best.pt --split test
@@ -175,7 +183,7 @@ python crab.py train --data data/data.yaml --device 0
 
 Evaluation saves plots and sample predictions under `runs/evaluate/`. Training uses [train.yaml](train.yaml), recovered from the checkpoint: COCO-pretrained `yolo11m-seg.pt`, 300 epochs, batch 16, image size 640, AdamW, initial learning rate 0.005, five warm-up epochs and a linear learning-rate schedule. Mosaic, horizontal flips and HSV augmentation were enabled; training-time MixUp was zero. Roboflow preprocessing/augmentation and Ultralytics training augmentation are separate stages.
 
-The training command downloads the upstream pretrained model if necessary. The settings document the original run, but identical scores are not promised across hardware, library versions or dataset exports.
+The training command downloads the upstream pretrained weights if they are missing. The configuration matches the saved experiment settings; hardware and library differences can still affect the result.
 
 ## Checks and next experiments
 
@@ -185,8 +193,8 @@ python -m unittest -v
 
 The regression tests cover known metric geometry, depth units, invalid depth and calibration, missing images, empty detections, and separate animals of the same class. The release was also checked with real checkpoint inference and evaluation on the full archived test split.
 
-The next useful experiments would be a larger source-separated test collection, a closer review of other-crab errors, and comparison of depth-based extents against physical reference measurements. Speed claims would require a separate benchmark on the intended hardware.
+I would extend the work by collecting a larger test set from separate sources, reviewing the other-crab failures, and comparing the dimension estimates with physical measurements. Before using it on a robot, I would also benchmark it on the target hardware.
 
 ## Attribution and reuse
 
-The model is based on [Ultralytics YOLO11 segmentation](https://docs.ultralytics.com/tasks/segment/), starting from COCO-pretrained weights. The checkpoint carries Ultralytics' AGPL-3.0 metadata. The Roboflow export declares MIT, while individual source images may have separate attribution and reuse terms. No blanket license for third-party images or video is asserted here. The raw collection and internal project report are not included in the repository.
+The model builds on [Ultralytics YOLO11 segmentation](https://docs.ultralytics.com/tasks/segment/) and COCO-pretrained weights. Its checkpoint carries Ultralytics' AGPL-3.0 metadata. The included Roboflow export declares MIT; individual source images and video may have their own attribution and reuse terms, which that declaration does not resolve. The internal project report is kept outside this repository.

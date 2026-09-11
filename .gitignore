@@ -7,6 +7,7 @@ data/
 weights/
 *.pt
 *.zip
+!/Dataset.zip
 *.rar
 *.pdf
 .env
